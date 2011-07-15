@@ -1,0 +1,4 @@
+<plugin>
+  <name>lensed</name>
+  <classname>lensed.plugin.LensedPlugin</classname>
+</plugin>
