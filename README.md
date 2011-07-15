@@ -1,5 +1,11 @@
 Generates scalaz.Lens'es for case class fields.
 
+Disclaimer
+==========
+This compiler plugin is in a **VERY** early stage. Currently the generated code only works for case classes of arity 1.
+
+**USE AT YOUR OWN RISK**
+
 Example
 -------
 
