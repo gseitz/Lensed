@@ -10,7 +10,7 @@ Features
 ========
 **Completed:**
 
- + Add `def`s for every case class field with the type `scalaz.Lens[CLASS_NAME, FIELD_TYPE]`
+ + Add `def FIELD_NAME: scalaz.Lens[CLASS_NAME, FIELD_TYPE]` to the companion object for every case class field
 
 
 **Todo:**
