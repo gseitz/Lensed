@@ -45,10 +45,10 @@ class LensedPluginProject(info: ProjectInfo) extends ParentProject(info) {
 //        "-nobootcp",
 //        "-Xplugin:plugin/src/test/stub-jar/dynamic-mixin-stub.jar",
         "-Xplugin-require:lensed",
-        "-Xprint:generatesynthetics",
-        "-Ybrowse:generatesynthetics",
+//        "-Ybrowse:generatesynthetics",
+//        "-Ybrowse:lazyvals",
 //        "-Xprint:lazyvals",
-//        "-Ylog:generatesynthetics",
+        "-Ylog:generatesynthetics",
 //        "-Ylog:lambdalift",
         "-Ydebug",
         "-Yshow-syms"
