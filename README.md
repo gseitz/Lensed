@@ -8,11 +8,15 @@ This compiler plugin is in a **VERY** early stage.
 
 Features
 ========
-Completed:
-* Add `def`s for every case class field with the type `scalaz.Lens[CLASS_NAME, FIELD_TYPE]`
+**Completed:**
 
-Todo
-* Support `case class`es with type parameters
+ + Add `def`s for every case class field with the type `scalaz.Lens[CLASS_NAME, FIELD_TYPE]`
+
+
+**Todo:**
+
+ + Support `case class`es with type parameters
+
 
 Example
 -------
