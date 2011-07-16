@@ -1,4 +1,4 @@
-Generates scalaz.Lens'es for case class fields.
+Generates `scalaz.Lens`es for case class fields.
 
 Disclaimer
 ==========
@@ -9,10 +9,10 @@ This compiler plugin is in a **VERY** early stage.
 Features
 ========
 Completed:
-* Add 'def's for every case class field with the type `scalaz.Lens[CLASS_NAME, FIELD_TYPE]`
+* Add `def`s for every case class field with the type `scalaz.Lens[CLASS_NAME, FIELD_TYPE]`
 
 Todo
-* Support case classes with type parameters
+* Support `case class`es with type parameters
 
 Example
 -------
