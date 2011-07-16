@@ -39,7 +39,7 @@ class LensedPluginProject(info: ProjectInfo) extends ParentProject(info) {
     class ExampleProject(info: ProjectInfo) extends DefaultProject(info) {
 //      override def compileClasspath = thePlugin.runClasspath
       override def compileOptions = compileOptions(
-        "-Xplugin:./plugin/target/scala_" + buildScalaVersion + "/the-plugin_" + buildScalaVersion + "-2.9.jar",
+        "-Xplugin:./plugin/target/scala_" + buildScalaVersion + "/the-plugin_" + buildScalaVersion + "-" + version + ".jar",
         "-verbose",
 //        "-usejavacp",
 //        "-nobootcp",
