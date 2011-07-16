@@ -2,20 +2,28 @@ Generates scalaz.Lens'es for case class fields.
 
 Disclaimer
 ==========
-This compiler plugin is in a **VERY** early stage. Currently the generated code only works for case classes of arity 1.
+This compiler plugin is in a **VERY** early stage.
 
 **USE AT YOUR OWN RISK**
+
+Features
+========
+Completed:
+* Add 'def's for every case class field with the type `scalaz.Lens[CLASS_NAME, FIELD_TYPE]`
+
+Todo
+* Support case classes with type parameters
 
 Example
 -------
 
 Project A
 
-        case class Foo(bar: Int)
+        case class Foo(bar: Int, baz: String)
 
 Project B
 
-        val foo = Foo(17)
-        val baz = Foo.bar.set(foo, 42)
-        Foo.bar.get(baz) // == 42
+        val foo = Foo(17, "in your case")
+        val foo2 = Foo.bar.set(foo, 42)
+        Foo.bar.get(foo2) // == 42
         val barLens: scalaz.Lens[Foo, Int] = Foo.bar
