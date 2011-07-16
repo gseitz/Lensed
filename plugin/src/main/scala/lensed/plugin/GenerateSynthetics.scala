@@ -24,6 +24,7 @@ with TreeDSL
   val phaseName = "generatesynthetics"
 
   val lensClass = definitions.getClass("scalaz.Lens")
+  val annotationClass = definitions.getClass("lensed.annotation.lensed")
 
   def newTransformer(unit: CompilationUnit) = new LensedTransformer(unit)
 
@@ -42,12 +43,12 @@ with TreeDSL
 
       val ccImpl = cd.impl.body
 
-      def shouldLens(tree: Tree) = {
+      def shouldMemberBeLenses_?(tree: Tree) = {
         val sym = tree.symbol
         sym.isCaseAccessor && sym.isParamAccessor && sym.isMethod
       }
 
-      val lenses = ccImpl.filter(shouldLens).flatMap { ccMember =>
+      val lenses = ccImpl.filter(shouldMemberBeLenses_?).flatMap { ccMember =>
 
       //          println("processing member: " + ccMember)
         val memberSym = ccMember.symbol
@@ -109,14 +110,24 @@ with TreeDSL
       treeCopy.ModuleDef(md, md.mods, md.name, newImpl)
     }
 
+
+    def shouldLens(sym: Symbol) = {
+      sym.annotations.foreach { ann=>
+        println(ann.atp.typeSymbol)
+        println(annotationClass)
+      }
+      sym.isCaseClass && sym.annotations.exists(_.atp.typeSymbol == annotationClass)
+
+    }
+
     override def transform(tree: Tree): Tree = {
       val newTree = tree match {
-        case cd @ ClassDef(_, _, _, _) if cd.symbol.isCaseClass =>
+        case cd @ ClassDef(_, _, _, _) if shouldLens(cd.symbol) =>
           //          println("found case class. classdef.symbol.tpe: " + cd.symbol.tpe)
           //          println("case class impl: classdef.tpe"+ cd.tpe)
           caseClasses +=  cd.symbol -> cd
           cd
-        case md @ ModuleDef(mods, name, impl) if md.symbol.companionClass.isCaseClass=>
+        case md @ ModuleDef(mods, name, impl) if shouldLens(md.symbol.companionClass) =>
           println("Pimping " + md.symbol.tpe)
           pimpModuleDef(md)
         case _ => tree

@@ -8,8 +8,6 @@ class LensedPlugin(val global: Global) extends Plugin {
   import global._
 
 
-  val LensedAnnotationClass = "lensed.annotation.lensed"
-
   val name = "lensed"
   val description = "support for the @lensed annotation"
 
