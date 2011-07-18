@@ -75,14 +75,14 @@ with TreeDSL
       copyBlock
     }
 
-    def generateLensSetFunction(ccSymbol: Symbol, ccMember: Tree, defaults: List[Tree]) = {
-      val ccSetVal = ValDef(Modifiers(PARAM), newTermName("t"), REF(ccSymbol), EmptyTree)
-      val memSetVal = ValDef(Modifiers(PARAM), newTermName("m"), TypeTree(ccMember.symbol.tpe.resultType), EmptyTree)
+    def generateLensSetFunction(ccType: Type, ccMember: Tree, defaults: List[Tree]) = {
+      val ccSetVal = ValDef(Modifiers(PARAM), newTermName("t"), TypeTree(ccType), EmptyTree)
+      val memSetVal = ValDef(Modifiers(PARAM), newTermName("m"), TypeTree(ccType.computeMemberType(ccMember.symbol).resultType), EmptyTree)
       Function(ccSetVal :: memSetVal :: Nil, generateLensSetBody(defaults, ccMember))
     }
 
-    def generateLensGetFunction(ccSymbol: Symbol, memberSym: Symbol) = {
-      val ccGetVal = ValDef(Modifiers(PARAM), newTermName("t"), REF(ccSymbol), EmptyTree)
+    def generateLensGetFunction(ccType: Type, memberSym: Symbol) = {
+      val ccGetVal = ValDef(Modifiers(PARAM), newTermName("t"), TypeTree(ccType), EmptyTree)
       Function(ccGetVal :: Nil, Select(Ident(newTermName("t")), memberSym.name.toTermName))
     }
 
@@ -91,13 +91,15 @@ with TreeDSL
       val mdClazz = md.symbol.moduleClass
 
       val cd = caseClasses(md.symbol.companionClass)
-
       val ccSymbol = cd.symbol
-
       val ccImpl = cd.impl.body
+      val ccTypeParams = cd.tparams
+
+//      log("ClassDef: " + cd)
+//      log("ClassDef.symbol: " + cd.symbol)
+//      log("ClassDef.tparams: " + ccTypeParams.mkString(", "))
 
       val defaults = findDefaultDefsInOrder(cd)
-
 
       val lenses = ccImpl.filter(shouldMemberBeLensed_?).flatMap { ccMember =>
 
@@ -110,14 +112,6 @@ with TreeDSL
         //          log("ccSetVal: " + ccSetVal)
         //          log("memSetVal: " + memSetVal)
 
-        val lensGet = generateLensGetFunction(ccSymbol, memberSym)
-        val lensSet = generateLensSetFunction(ccSymbol, ccMember, defaults)
-
-
-        val lensApply = TypeApply(
-          Select(Ident(newTermName("scalaz")) DOT newTermName("Lens"), newTermName("apply")),
-          TypeTree(ccSymbol.tpe) :: TypeTree(ccMember.symbol.tpe) :: Nil)
-        val rhs = Apply(lensApply, lensGet :: lensSet :: Nil)
 
         //          log("lensApply: " + lensApply)
         //          log("memberSelect: " + memberSelect)
@@ -125,24 +119,69 @@ with TreeDSL
         //          log("lensGet: " + lensGet)
         //          log("lensSet: " + lensSet)
         //          log("rhs: " + rhs)
-
-        val concreteLensType = appliedType(lensClass.tpe, ccSymbol.tpe :: ccMember.symbol.tpe.resultType :: Nil)
-
-        val lensValName = memberSym.name.toTermName.append("0")
-
-        val lensValSym = mdClazz.newValue(mdClazz.pos.focus, lensValName)
-        lensValSym setFlag (SYNTHETIC | PRIVATE)
-        lensValSym setInfo  concreteLensType
-        mdClazz.info.decls enter lensValSym
-
         val lensDefSym = mdClazz.newMethod(mdClazz.pos.focus, ccMember.symbol.name.toTermName)
+
+        val lensDefTypeParams = ccTypeParams.map { tp =>
+          val bounds = tp.symbol.tpe.bounds
+          val param = lensDefSym.newTypeParameter(lensDefSym.pos.focus, newTypeName(tp.name.toString))
+          param setFlag (DEFERRED | PARAM)
+          param setInfo TypeBounds(bounds.lo, bounds.hi)
+//          localTyper typed { TypeDef(param) }
+          param
+        }
+
+        val ccTpe =
+          if (ccTypeParams.isEmpty) ccSymbol.tpe
+          else typeRef(NoPrefix, ccSymbol, lensDefTypeParams.map(_.tpe))
+
+//        log("ccTpe: " + ccTpe)
+//        log("ccTpe.typeSymbol: " + ccTpe.typeSymbol)
+//        log("lensDefTypeParams: " + lensDefTypeParams.mkString(", "))
+
+
+
+        val concreteLensType = appliedType(lensClass.tpe, ccTpe :: ccTpe.computeMemberType(ccMember.symbol).finalResultType :: Nil)
+//        log("concreteLensType: " + concreteLensType)
+
+
+        val lensGet = generateLensGetFunction(ccTpe, memberSym)
+        val lensSet = generateLensSetFunction(ccTpe, ccMember, defaults)
+
+        val lensApply = TypeApply(
+          Select(Ident(newTermName("scalaz")) DOT newTermName("Lens"), newTermName("apply")),
+          TypeTree(ccTpe) :: TypeTree(ccTpe.computeMemberType(ccMember.symbol)) :: Nil)
+
+        val rhs = Apply(lensApply, lensGet :: lensSet :: Nil)
+
+
+
+        val lensDefType =
+          if(lensDefTypeParams.isEmpty) MethodType(Nil, concreteLensType)
+          else typeFun(lensDefTypeParams, concreteLensType)
+
+//        log("lensDefType: " + lensDefType)
+
+        lensDefSym setInfo lensDefType
         lensDefSym setFlag (SYNTHETIC)
-        lensDefSym setInfo MethodType(Nil, concreteLensType)
         mdClazz.info.decls enter lensDefSym
 
-        val lensVal = localTyper.typed { VAL(lensValSym) === rhs }
-        val lensDef = localTyper.typed { DEF(lensDefSym) === Select(THIS(mdClazz), lensValName) }
-        List(lensVal, lensDef)
+//        log("rhs: " + rhs)
+//        log("lensDefSym: " + lensDefSym)
+
+        // not using the val for now
+//        val lensValName = memberSym.name.toTermName.append("0")
+//        val lensValSym = mdClazz.newValue(mdClazz.pos.focus, lensValName)
+//        lensValSym setFlag (SYNTHETIC | PRIVATE)
+//        lensValSym setInfo  concreteLensType
+//        mdClazz.info.decls enter lensValSym
+//        val lensVal = localTyper.typed { VAL(lensValSym) === rhs }
+//        val lensDef = localTyper.typed { DEF(lensDefSym) === Select(THIS(mdClazz), lensValName) }
+        
+        val lensDef = localTyper.typed { DEF(lensDefSym) === rhs }
+
+//        List(lensVal, lensDef)
+        List(lensDef)
+
       }
 
       val newImpl = treeCopy.Template(impl, impl.parents, impl.self, lenses ++ impl.body)
