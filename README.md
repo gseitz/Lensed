@@ -13,11 +13,12 @@ Features
 **Completed:**
 
  + Add `def FIELD_NAME: scalaz.Lens[CLASS_NAME, FIELD_TYPE]` to the companion object for every case class field
-
+ + Support `case class`es with type parameters
 
 **Todo:**
 
- + Support `case class`es with type parameters
+ + Cache lenses in a `val` and add `asInstanceOf` casts to the `def`'s body.
+ + Implement Jason's idea for automagically composing lenses: http://groups.google.com/group/scalaz/msg/c89c41c3dbecb16c
 
 
 Restrictions
@@ -39,7 +40,14 @@ Project A
 
         case class Foo(bar: Int, baz: String)
 
-Project B
+The following code will be generated:
+
+        object Foo {
+            def bar = Lens[Foo, Int]((t: Foo) => t.bar, (t: Foo, m: Int) => t.copy(bar = m))
+            def baz = Lens[Foo, String]((t: Foo) => t.baz, (t: Foo, m: String) => t.copy(baz = m))
+        }
+
+Usage Project B
 
         val foo = Foo(17, "in your case")
         val foo2 = Foo.bar.set(foo, 42)
