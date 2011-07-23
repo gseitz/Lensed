@@ -2,12 +2,10 @@ package lensed.plugin
 
 import scala.tools._
 import nsc.Global
-import nsc.interpreter.Naming
 import nsc.plugins.PluginComponent
 import nsc.transform.{Transform, TypingTransformers}
 import nsc.symtab.Flags._
 import nsc.ast.TreeDSL
-import nsc.typechecker.Namers
 
 
 class GenerateSynthetics(plugin: LensedPlugin, val global: Global) extends PluginComponent
@@ -23,7 +21,7 @@ with TreeDSL
   val runsAfter = List("typer")
   val phaseName = "generatesynthetics"
 
-  val lensClass = definitions.getClass("scalaz.Lens")
+  val lensClass: Symbol = definitions.getClass("scalaz.Lens")
   val annotationClass = definitions.getClass("lensed.annotation.lensed")
 
   def newTransformer(unit: CompilationUnit) = new LensedTransformer(unit)
@@ -86,6 +84,19 @@ with TreeDSL
       Function(ccGetVal :: Nil, Select(Ident(newTermName("t")), memberSym.name.toTermName))
     }
 
+    def lensType(typeParams: Type*) = appliedType(lensClass.tpe, typeParams.toList)
+
+    def classType(symbol: Symbol, typeParams: List[Type]) =
+      if (typeParams.isEmpty) symbol.tpe
+      else typeRef(symbol.typeConstructor.prefix, symbol, typeParams)
+
+    def typeParamTypeSymbols(parent: Symbol, tparams: List[TypeDef]) = tparams.map { tp =>
+      val bounds = tp.symbol.tpe.bounds
+      val param = parent.newTypeParameter(parent.pos.focus, newTypeName(tp.name.toString))
+      param setFlag (DEFERRED | PARAM)
+      param setInfo TypeBounds(bounds.lo, bounds.hi)
+    }
+
     private def pimpModuleDef(md: ModuleDef): Tree = {
       val impl = md.impl
       val mdClazz = md.symbol.moduleClass
@@ -99,7 +110,89 @@ with TreeDSL
 //      log("ClassDef.symbol: " + cd.symbol)
 //      log("ClassDef.tparams: " + ccTypeParams.mkString(", "))
 
-      val defaults = findDefaultDefsInOrder(cd)
+      val defaults = findDefaultDefsInOrder(cd);
+
+      
+//      val ccW = {
+//
+//        val ccClazzName = newTypeName(mdClazz.nameString + "W")
+//        val ccClazzW = mdClazz.newClass(mdClazz.pos.focus, ccClazzName)
+//        val ccClazzWTParam = TypeDef(Modifiers(DEFERRED | PARAM), newTypeName("LensA"), Nil, TypeBoundsTree(TypeTree(NothingClass.tpe), TypeTree(AnyClass.tpe)))
+//
+//        val ccClazzWTypes = typeParamTypeSymbols(ccClazzW, ccClazzWTParam :: ccTypeParams)
+//
+//        val ccType = classType(ccSymbol, ccTypeParams.map(_.tpe))
+//        val concreteLensType = lensType(ccClazzWTParam.symbol.tpe, ccType)
+//
+//        val lensDefType =
+//          if(ccClazzWTypes.isEmpty) MethodType(Nil, concreteLensType)
+//          else typeFun(ccClazzWTypes, concreteLensType)
+//
+//
+//
+//        val lenses: List[Tree] = ccImpl.filter(shouldMemberBeLensed_?).flatMap { ccMember =>
+//          val ccClazzWTypes = typeParamTypeSymbols(ccClazzW, ccClazzWTParam :: ccTypeParams)
+//          val ccType = classType(ccClazzW, ccClazzWTypes.map(_.tpe))
+//          val ccMemberFinalResultType = ccType.computeMemberType(ccMember.symbol).finalResultType
+//
+//          val lensDefSym = ccClazzW.newMethod(ccClazzW.pos.focus, ccMember.symbol.name.toTermName)
+//          val compose =
+//            Apply(
+//              TypeApply(
+//                Select(Select(This(ccClazzW), newTermName("l")), newTermName("andThen")),
+//                TypeTree(ccClazzWTParam.tpe) :: TypeTree(ccMemberFinalResultType) :: Nil),
+//              TypeApply(
+//                Select(REF(mdClazz), ccMember.symbol.name),
+//                TypeTree(ccMemberFinalResultType) :: Nil) :: Nil
+//            )
+//          lensDefSym setInfo lensDefType
+//          lensDefSym setFlag (SYNTHETIC)
+//
+//          val result = List(localTyper typed { DefDef(lensDefSym, compose) })
+//          ccClazzW.info.decls enter lensDefSym
+//          result
+//        }
+//
+//        val implicitCcW = {
+//          val implicitDefTypeParams = typeParamTypeSymbols(ccClazzW, ccClazzWTParam :: ccTypeParams)
+//          val ccClazzWType = classType(ccClazzW, implicitDefTypeParams.map(_.tpe))
+//          val concreteccWType = appliedType(ccClazzW.tpe, ccClazzWTParam.symbol.tpe :: ccClazzWType :: Nil)
+//          val implicitDefType = typeFun(implicitDefTypeParams, concreteccWType)
+//          val implicitDefSym = mdClazz.newMethod(mdClazz.pos.focus, newTermName("ccw"))
+//          implicitDefSym setInfo implicitDefType
+//          implicitDefSym setFlag (SYNTHETIC | IMPLICIT)
+//
+//          mdClazz.info.decls enter implicitDefSym
+//
+//          localTyper typed {
+//            DefDef(
+//              implicitDefSym,
+//              List(List(ValDef(Modifiers(PARAM), newTermName("l"), TypeTree(concreteccWType), EmptyTree))),
+//              Apply(
+//                Select(
+//                  New(TypeTree(ccClazzWType)),
+//                  nme.CONSTRUCTOR
+//                ),
+//                Ident(newTermName("l")) :: Nil
+//              )
+//            )
+//          }
+//        }
+//        mdClazz.info.decls enter ccClazzW
+//
+//        ClassDef(ccClazzW,
+//          Template(List[Tree](),
+//            emptyValDef: ValDef,
+//            NoMods,
+//            List(List(ValDef(NoMods, newTermName("l"), TypeTree(ccType), EmptyTree))),
+//            List(List[Tree]()),
+//            lenses ::: implicitCcW :: Nil,
+//            ccClazzW.pos.focus
+//          )
+//        )
+//      }
+
+
 
       val lenses = ccImpl.filter(shouldMemberBeLensed_?).flatMap { ccMember =>
 
@@ -121,18 +214,9 @@ with TreeDSL
         //          log("rhs: " + rhs)
         val lensDefSym = mdClazz.newMethod(mdClazz.pos.focus, ccMember.symbol.name.toTermName)
 
-        val lensDefTypeParams = ccTypeParams.map { tp =>
-          val bounds = tp.symbol.tpe.bounds
-          val param = lensDefSym.newTypeParameter(lensDefSym.pos.focus, newTypeName(tp.name.toString))
-          param setFlag (DEFERRED | PARAM)
-          param setInfo TypeBounds(bounds.lo, bounds.hi)
-//          localTyper typed { TypeDef(param) }
-          param
-        }
+        val lensDefTypeParams = typeParamTypeSymbols(lensDefSym, ccTypeParams)
 
-        val ccTpe =
-          if (ccTypeParams.isEmpty) ccSymbol.tpe
-          else typeRef(NoPrefix, ccSymbol, lensDefTypeParams.map(_.tpe))
+        val ccTpe = classType(ccSymbol, lensDefTypeParams.map(_.tpe))
 
 //        log("ccTpe: " + ccTpe)
 //        log("ccTpe.typeSymbol: " + ccTpe.typeSymbol)
@@ -140,7 +224,7 @@ with TreeDSL
 
 
 
-        val concreteLensType = appliedType(lensClass.tpe, ccTpe :: ccTpe.computeMemberType(ccMember.symbol).finalResultType :: Nil)
+        val concreteLensType = lensType(ccTpe, ccTpe.computeMemberType(ccMember.symbol).finalResultType)
 //        log("concreteLensType: " + concreteLensType)
 
 
@@ -156,7 +240,7 @@ with TreeDSL
 
 
         val lensDefType =
-          if(lensDefTypeParams.isEmpty) MethodType(Nil, concreteLensType)
+          if(lensDefTypeParams.isEmpty) NullaryMethodType(concreteLensType)
           else typeFun(lensDefTypeParams, concreteLensType)
 
 //        log("lensDefType: " + lensDefType)
@@ -184,8 +268,140 @@ with TreeDSL
 
       }
 
-      val newImpl = treeCopy.Template(impl, impl.parents, impl.self, lenses ++ impl.body)
-      treeCopy.ModuleDef(md, md.mods, md.name, newImpl)
+
+      val owner0 = localTyper.context1.enclClass.owner
+      localTyper.context1.enclClass.owner = mdClazz
+
+
+
+      val caseClassW: ClassDef = {
+        val caseClassWName = ccSymbol.name.append("W").toTypeName
+//        val = TypeDef(NoMods, newTypeName("PLens"), Nil, TypeBoundsTree(TypeTree(NothingClass.tpe), TypeTree(AnyClass.tpe)))
+
+        val caseClassWSym = mdClazz.newClass(mdClazz.pos.focus, caseClassWName)
+//        val PLensParamTypes = typeParamTypeSymbols(caseClassWSym, TypeDef(Modifiers(DEFERRED | PARAM), newTypeName("PLens"), Nil, TypeBoundsTree(TypeTree(NothingClass.tpe), TypeTree(AnyClass.tpe))) :: Nil)
+
+        val PLensParamTypes = {
+          val param = caseClassWSym.newTypeParameter(caseClassWSym.pos.focus, newTypeName("PLens"))
+          param setFlag (DEFERRED | PARAM)
+          param setInfo TypeBounds(NothingClass.tpe, AnyClass.tpe)
+          param
+        } :: Nil
+
+        val ccType = classType(caseClassWSym, PLensParamTypes.map(_.tpe))
+
+        log("PLensParamTypes: " + PLensParamTypes.mkString(", "))
+        log("typeFun: " + typeFun(PLensParamTypes, caseClassWSym.tpe))
+        log("ccType: " + ccType)
+
+
+        caseClassWSym setInfo polyType(
+          PLensParamTypes.map(_.tpe.typeSymbol),
+          ClassInfoType(
+            ObjectClass.tpe :: ScalaObjectClass.tpe :: Nil,
+            new Scope,
+            typeFun(PLensParamTypes, ccType).typeSymbol))
+        mdClazz.info.decls enter caseClassWSym
+
+        caseClassWSym.newConstructor(caseClassWSym.pos.focus)
+
+        log("caseClassWSym: " + caseClassWSym)
+        log("caseClassWSym.info: " + caseClassWSym.info)
+//        log("appliedType: " + appliedType(caseClassWSym.tpe, PLensParamTypes.map(_.tpe)))
+        val constrParamSym = caseClassWSym.newValue(caseClassWSym.pos.focus, newTermName("l"))
+        constrParamSym setInfo lensType(PLensParamTypes.head.tpe, ccSymbol.tpe)
+        constrParamSym setFlag (PARAMACCESSOR)
+        caseClassWSym.info.decls enter constrParamSym
+
+
+        ClassDef(
+          caseClassWSym,
+          NoMods,
+//          Template(
+//            TypeTree(ObjectClass.tpe) :: TypeTree(ScalaObjectClass.tpe) :: Nil,
+//            emptyValDef.asInstanceOf[ValDef],
+            List(List(
+                ValDef(constrParamSym, EmptyTree)
+//              ValDef(NoMods, newTermName("l"), TypeTree(), EmptyTree)
+              )
+            ),
+            List(List()),
+
+            ccImpl.filter(shouldMemberBeLensed_?).flatMap { ccMember =>
+              val memberSym = ccMember.symbol
+              val defName = memberSym.name.toTermName
+              val valName = memberSym.name.toTermName.append("0")
+
+
+              val memberValSym = caseClassWSym.newValue(caseClassWSym.pos.focus, valName)
+              memberValSym setFlag (PRIVATE | LOCAL)
+              memberValSym setInfo lensType(PLensParamTypes.head.tpe, ccType.computeMemberType(memberSym).finalResultType)
+              caseClassWSym.info.decls enter memberValSym
+
+              val memberDefSym = caseClassWSym.newMethod(caseClassWSym.pos.focus, defName)
+              memberDefSym setFlag (METHOD | STABLE)
+              memberDefSym setInfo NullaryMethodType(classType(lensClass, PLensParamTypes.head.tpe :: ccType.computeMemberType(memberSym).finalResultType :: Nil))
+              caseClassWSym.info.decls enter memberDefSym
+              
+              ValDef(memberValSym,
+                Apply(
+                  TypeApply(
+                    Select(
+                      Select(This(caseClassWName), newTermName("l")),
+                      newTermName("andThen")
+                    ),
+                    TypeTree(ccType.computeMemberType(memberSym).finalResultType) :: Nil
+                  ),
+                  Select(Ident(mdClazz.name.toTermName), memberSym.name) :: Nil
+                )
+              ) ::
+              DefDef(memberDefSym, 
+                Select(This(caseClassWSym), valName)
+              ) :: Nil
+            },
+            NoPosition
+          )
+//        )
+
+
+      }
+
+      val typedCaseClassW = localTyper typed { caseClassW }
+
+
+
+      val implicitDef = {
+
+        val idSym = mdClazz.newMethod(mdClazz.pos.focus, newTermName("lens2classW"))
+
+        val idTypeParam = idSym.newTypeParameter(idSym.pos.focus, newTypeName("A"))
+        idTypeParam setInfo TypeBounds(NothingClass.tpe, AnyClass.tpe)
+
+        val idParamType = TypeRef(lensClass.tpe.prefix, lensClass, idTypeParam.tpe :: ccSymbol.tpe :: Nil)
+
+        idSym setFlag (IMPLICIT)
+        idSym setInfo polyType(
+          idTypeParam :: Nil,
+          MethodType(
+            idSym.newSyntheticValueParams(idParamType :: Nil),
+            TypeRef(mdClazz.thisType, typedCaseClassW.symbol, idTypeParam.tpe :: Nil)
+          )
+        )
+
+        mdClazz.info.decls enter idSym
+        mdClazz.info.decls enter idTypeParam
+
+        localTyper typed {
+          DEF(idSym) === NEW(TypeTree(typeRef(mdClazz.thisType, typedCaseClassW.symbol, idTypeParam.tpe :: Nil)), idSym ARG 0)
+        }
+      }
+
+      localTyper.context1.enclClass.owner = owner0
+
+
+
+      val newImpl2 = treeCopy.Template(impl, impl.parents, impl.self, lenses ::: typedCaseClassW :: implicitDef :: impl.body)
+      treeCopy.ModuleDef(md, md.mods, md.name, newImpl2)
     }
 
 
