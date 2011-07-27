@@ -9,10 +9,10 @@ import lensed.annotation.lensed
 
 
 @lensed
-//case class Address[T](street: T)
-case class Address(street: String)
+case class Address[T](street: T)
+//case class Address(street: String)
 
 @lensed
-//case class Person(address: lensed.test.Address[String])
-case class Person(address: lensed.test.Address)
+case class Person[T](address: lensed.test.Address[T])
+//case class Person(address: lensed.test.Address)
 

@@ -6,6 +6,7 @@ import nsc.plugins.PluginComponent
 import nsc.transform.{Transform, TypingTransformers}
 import nsc.symtab.Flags._
 import nsc.ast.TreeDSL
+import java.util.concurrent.atomic.AtomicLong
 
 
 class GenerateSynthetics(plugin: LensedPlugin, val global: Global) extends PluginComponent
@@ -90,9 +91,11 @@ with TreeDSL
       if (typeParams.isEmpty) symbol.tpe
       else typeRef(symbol.typeConstructor.prefix, symbol, typeParams)
 
+    val symSeq = new AtomicLong(0)
+
     def typeParamTypeSymbols(parent: Symbol, tparams: List[TypeDef]) = tparams.map { tp =>
       val bounds = tp.symbol.tpe.bounds
-      val param = parent.newTypeParameter(parent.pos.focus, newTypeName(tp.name.toString))
+      val param = parent.newTypeParameter(parent.pos.focus, newTypeName(tp.name.toString).append(symSeq.getAndIncrement.toString))
       param setFlag (DEFERRED | PARAM)
       param setInfo TypeBounds(bounds.lo, bounds.hi)
     }
@@ -241,7 +244,7 @@ with TreeDSL
 
         val lensDefType =
           if(lensDefTypeParams.isEmpty) NullaryMethodType(concreteLensType)
-          else typeFun(lensDefTypeParams, concreteLensType)
+          else typeFun(lensDefTypeParams, NullaryMethodType(concreteLensType))
 
 //        log("lensDefType: " + lensDefType)
 
@@ -281,110 +284,150 @@ with TreeDSL
         val caseClassWSym = mdClazz.newClass(mdClazz.pos.focus, caseClassWName)
 //        val PLensParamTypes = typeParamTypeSymbols(caseClassWSym, TypeDef(Modifiers(DEFERRED | PARAM), newTypeName("PLens"), Nil, TypeBoundsTree(TypeTree(NothingClass.tpe), TypeTree(AnyClass.tpe))) :: Nil)
 
-        val PLensParamTypes = {
+        val PLensParamType = {
           val param = caseClassWSym.newTypeParameter(caseClassWSym.pos.focus, newTypeName("PLens"))
           param setFlag (DEFERRED | PARAM)
-          param setInfo TypeBounds(NothingClass.tpe, AnyClass.tpe)
+          param setInfo (localTyper typed { TypeTree(TypeBounds.empty) }).tpe
           param
-        } :: Nil
+        }
 
-        val ccType = classType(caseClassWSym, PLensParamTypes.map(_.tpe))
+        val ccParamTypes = typeParamTypeSymbols(caseClassWSym, ccTypeParams)
 
-        log("PLensParamTypes: " + PLensParamTypes.mkString(", "))
-        log("typeFun: " + typeFun(PLensParamTypes, caseClassWSym.tpe))
-        log("ccType: " + ccType)
+        val ccwParamTypes = PLensParamType :: ccParamTypes
+
+//        val ccType = classType(caseClassWSym, ccwParamTypes.map(_.tpe))
+
+        log("PLensParamTypes: " + ccwParamTypes.mkString(", "))
+        log("typeFun: " + typeFun(ccwParamTypes, caseClassWSym.tpe))
+//        log("ccType: " + ccType)
 
 
         caseClassWSym setInfo polyType(
-          PLensParamTypes.map(_.tpe.typeSymbol),
+          ccwParamTypes.map(_.tpe.typeSymbol),
           ClassInfoType(
             ObjectClass.tpe :: ScalaObjectClass.tpe :: Nil,
             new Scope,
-            typeFun(PLensParamTypes, ccType).typeSymbol))
+            caseClassWSym))
+//        ccwParamTypes.foreach(pt=> caseClassWSym.info.decls enter pt)
+        
         mdClazz.info.decls enter caseClassWSym
 
-        caseClassWSym.newConstructor(caseClassWSym.pos.focus)
+//        caseClassWSym.newConstructor(caseClassWSym.pos.focus)
 
         log("caseClassWSym: " + caseClassWSym)
         log("caseClassWSym.info: " + caseClassWSym.info)
 //        log("appliedType: " + appliedType(caseClassWSym.tpe, PLensParamTypes.map(_.tpe)))
         val constrParamSym = caseClassWSym.newValue(caseClassWSym.pos.focus, newTermName("l"))
-        constrParamSym setInfo lensType(PLensParamTypes.head.tpe, ccSymbol.tpe)
-        constrParamSym setFlag (PARAMACCESSOR)
+        constrParamSym setInfo lensType(PLensParamType.tpe, classType(ccSymbol, ccParamTypes.map(_.tpe)))
+        constrParamSym setFlag (PARAMACCESSOR | PRIVATE)
         caseClassWSym.info.decls enter constrParamSym
 
-
-        ClassDef(
-          caseClassWSym,
-          NoMods,
-//          Template(
-//            TypeTree(ObjectClass.tpe) :: TypeTree(ScalaObjectClass.tpe) :: Nil,
-//            emptyValDef.asInstanceOf[ValDef],
-            List(List(
-                ValDef(constrParamSym, EmptyTree)
-//              ValDef(NoMods, newTermName("l"), TypeTree(), EmptyTree)
-              )
-            ),
+//        case class ClassDef(mods: Modifiers, name: TypeName, tparams: List[TypeDef], impl: Template)
+        ClassDef(caseClassWSym,
+          Template(
+            caseClassWSym.info.parents map TypeTree,
+            if (caseClassWSym.thisSym == caseClassWSym || phase.erasedTypes) emptyValDef else ValDef(caseClassWSym.thisSym),
+            NoMods,
+            List(List(ValDef(constrParamSym, EmptyTree))),
             List(List()),
-
-            ccImpl.filter(shouldMemberBeLensed_?).flatMap { ccMember =>
+          ccImpl.filter(shouldMemberBeLensed_?).flatMap { ccMember =>
               val memberSym = ccMember.symbol
               val defName = memberSym.name.toTermName
               val valName = memberSym.name.toTermName.append("0")
 
+              val appliedT = classType(ccSymbol,ccParamTypes.map(_.tpe))
 
-              val memberValSym = caseClassWSym.newValue(caseClassWSym.pos.focus, valName)
-              memberValSym setFlag (PRIVATE | LOCAL)
-              memberValSym setInfo lensType(PLensParamTypes.head.tpe, ccType.computeMemberType(memberSym).finalResultType)
-              caseClassWSym.info.decls enter memberValSym
+//              val memberValSym = caseClassWSym.newValue(caseClassWSym.pos.focus, valName)
+//              memberValSym setFlag (PRIVATE | LOCAL)
+//              memberValSym setInfo lensType(PLensParamType.tpe, appliedT.computeMemberType(memberSym).finalResultType)
+//              caseClassWSym.info.decls enter memberValSym
 
               val memberDefSym = caseClassWSym.newMethod(caseClassWSym.pos.focus, defName)
-              memberDefSym setFlag (METHOD | STABLE)
-              memberDefSym setInfo NullaryMethodType(classType(lensClass, PLensParamTypes.head.tpe :: ccType.computeMemberType(memberSym).finalResultType :: Nil))
+              memberDefSym setFlag (METHOD)
+//              memberDefSym setInfo polyType(ccParamTypes, NullaryMethodType(classType(lensClass, PLensParamType.tpe :: appliedT.computeMemberType(memberSym).finalResultType :: Nil)))
+              memberDefSym setInfo NullaryMethodType(classType(lensClass, PLensParamType.tpe :: appliedT.computeMemberType(memberSym).finalResultType :: Nil))
               caseClassWSym.info.decls enter memberDefSym
-              
-              ValDef(memberValSym,
+
+//              ValDef(memberValSym,
+//                Apply(
+//                  TypeApply(
+//                    Select(
+//                      Select(This(caseClassWName), newTermName("l")),
+//                      newTermName("andThen")
+//                    ),
+////                    TypeTree(ccType.computeMemberType(memberSym).finalResultType) :: Nil
+//                    ccParamTypes.map(t=>TypeTree(t.tpe))
+//                  ),
+//                  if (ccTypeParams.isEmpty)
+//                    Select(Ident(mdClazz.name.toTermName), memberSym.name) :: Nil
+//                  else
+//                    TypeApply(
+//                      Select(Ident(mdClazz.name.toTermName), memberSym.name),
+////                      ccType.computeMemberType(memberSym).finalResultType)::Nil
+//                    ccParamTypes.map(t=>TypeTree(t.tpe))
+//                    ) :: Nil
+//                )
+//              ) ::
+              DefDef(memberDefSym,
+//                Select(This(caseClassWSym), valName)
                 Apply(
                   TypeApply(
                     Select(
                       Select(This(caseClassWName), newTermName("l")),
                       newTermName("andThen")
                     ),
-                    TypeTree(ccType.computeMemberType(memberSym).finalResultType) :: Nil
+                    TypeTree(appliedT.computeMemberType(memberSym).finalResultType) :: Nil
+//                    ccParamTypes.map(t=>TypeTree(t.tpe))
                   ),
-                  Select(Ident(mdClazz.name.toTermName), memberSym.name) :: Nil
+                  if (ccTypeParams.isEmpty)
+                    Select(Ident(mdClazz.name.toTermName), memberSym.name) :: Nil
+                  else
+                    TypeApply(
+                      Select(Ident(mdClazz.name.toTermName), memberSym.name),
+//                      ccType.computeMemberType(memberSym).finalResultType)::Nil
+                    ccParamTypes.map(t=>TypeTree(t.tpe))
+                    ) :: Nil
                 )
-              ) ::
-              DefDef(memberDefSym, 
-                Select(This(caseClassWSym), valName)
               ) :: Nil
             },
-            NoPosition
+          NoPosition
+
           )
+        )
+        
+
 //        )
+
 
 
       }
 
-      val typedCaseClassW = localTyper typed { caseClassW }
+      println("caseClassW: " + caseClassW)
+
+//      val typedCaseClassW = caseClassW// localTyper typed { caseClassW }
+      val typedCaseClassW =  localTyper typed { caseClassW }
 
 
 
       val implicitDef = {
 
-        val idSym = mdClazz.newMethod(mdClazz.pos.focus, newTermName("lens2classW"))
+        val idSym = mdClazz.newMethod(mdClazz.pos.focus, newTermName("lens2").append(caseClassW.name.toString))
 
         val idTypeParam = idSym.newTypeParameter(idSym.pos.focus, newTypeName("A"))
-        idTypeParam setInfo TypeBounds(NothingClass.tpe, AnyClass.tpe)
+        idTypeParam setInfo TypeBounds.empty //(localTyper typed { TypeTree(TypeBounds.empty) })
 
-        val idParamType = TypeRef(lensClass.tpe.prefix, lensClass, idTypeParam.tpe :: ccSymbol.tpe :: Nil)
+        val ccTypeParamSymbols = typeParamTypeSymbols(idSym, ccTypeParams)
+
+        val ccType = classType(ccSymbol, ccTypeParamSymbols.map(_.tpe))
+
+        val idParamType = TypeRef(lensClass.tpe.prefix, lensClass, idTypeParam.tpe :: ccType :: Nil)
 
         idSym setFlag (IMPLICIT)
         idSym setInfo polyType(
-          idTypeParam :: Nil,
+          idTypeParam :: ccTypeParamSymbols,
           MethodType(
             idSym.newSyntheticValueParams(idParamType :: Nil),
-            TypeRef(mdClazz.thisType, typedCaseClassW.symbol, idTypeParam.tpe :: Nil)
+            TypeRef(mdClazz.thisType, typedCaseClassW.symbol, idTypeParam.tpe :: ccTypeParamSymbols.map(_.tpe))
           )
         )
 
@@ -392,7 +435,7 @@ with TreeDSL
         mdClazz.info.decls enter idTypeParam
 
         localTyper typed {
-          DEF(idSym) === NEW(TypeTree(typeRef(mdClazz.thisType, typedCaseClassW.symbol, idTypeParam.tpe :: Nil)), idSym ARG 0)
+          DEF(idSym) === NEW(TypeTree(typeRef(mdClazz.thisType, typedCaseClassW.symbol, idTypeParam.tpe :: ccTypeParamSymbols.map(_.tpe))), idSym ARG 0)
         }
       }
 
