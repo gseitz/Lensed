@@ -13,6 +13,8 @@ case class Address[T](street: T)
 //case class Address(street: String)
 
 @lensed
-case class Person[T](address: lensed.test.Address[T])
+case class Person[T](name: Name, address: lensed.test.Address[T])
 //case class Person(address: lensed.test.Address)
 
+@lensed
+case class Name(first: String, last: String)
