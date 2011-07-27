@@ -4,7 +4,7 @@ import Keys._
 object LensedBuild extends Build {
 
   object BuildSettings {
-    val buildOrganization = "com.github.gseitz"
+    val buildOrganization = "com.github.gseitz.lensed"
     val buildVersion = "0.3-SNAPSHOT"
     val buildScalaVersion = "2.9.0-1"
 
