@@ -14,11 +14,12 @@ Features
 
  + Add `def FIELD_NAME: scalaz.Lens[CLASS_NAME, FIELD_TYPE]` to the companion object for every case class field
  + Support `case class`es with type parameters
+ + Implement Jason's idea for automagically composing lenses: http://groups.google.com/group/scalaz/msg/c89c41c3dbecb16c
+
 
 **Todo:**
 
  + Cache lenses in a `val` and add `asInstanceOf` casts to the `def`'s body.
- + Implement Jason's idea for automagically composing lenses: http://groups.google.com/group/scalaz/msg/c89c41c3dbecb16c
 
 
 Restrictions
@@ -38,18 +39,36 @@ Example
 
 Project A
 
-        case class Foo(bar: Int, baz: String)
+        case class Person(name: String, address: Address)
+        case class Address(city: String)
 
 The following code will be generated:
 
-        object Foo {
-            def bar = Lens[Foo, Int]((t: Foo) => t.bar, (t: Foo, m: Int) => t.copy(bar = m))
-            def baz = Lens[Foo, String]((t: Foo) => t.baz, (t: Foo, m: String) => t.copy(baz = m))
+        object Person {
+          def name: Lens[Person, String] = Lens(_.name, (p, n) => p.copy(name = n))
+          def address: Lens[Person, Address] = Lens(_.address, (p, a) => p.copy(address = a))
+
+          class PersonW[A](l: Lens[A, Person]) {
+            def name: Lens[A, String] = l andThen Person.name
+            def address: Lens[A, Address] = l andThen Person.address
+          }
+
+          implicit def lens2personW[A](l: Lens[A, Person]): PersonW[A] = new PersonW(l)
+        }
+
+        object Address {
+          def city: Lens[Address, String] = Lens(_.city, (p, s) => p.copy(city = s))
+
+          class AddressW[A](l: Lens[A, Address]) {
+            def city: Lens[A, String] = l andThen Address.city
+          }
+
+          implicit def lens2addressW[A](l: Lens[A, Address]): AddressW[A] = new AddressW(l)
         }
 
 Usage Project B
 
-        val foo = Foo(17, "in your case")
-        val foo2 = Foo.bar.set(foo, 42)
-        Foo.bar.get(foo2) // == 42
-        val barLens: scalaz.Lens[Foo, Int] = Foo.bar
+        val yankee = Person("John", Address("NYC"))
+        val mounty = Person.address.city.set(yankee, "Montreal")
+        Person.address.city.get(mounty) // == "Montreal"
+        val cityLens: scalaz.Lens[Person, String] = Person.address.city
