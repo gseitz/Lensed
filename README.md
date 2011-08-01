@@ -21,6 +21,20 @@ Features
 
  + Cache lenses in a `val` and add `asInstanceOf` casts to the `def`'s body.
 
+Quickstart
+----------
+
+    git clone https://gseitz@github.com/gseitz/Lensed.git
+    cd Lensed
+    sbt "project usage" console
+
+The last line compiles the projects in this order `annotation`, `plugin` (package), `testCaseClasses`, `usage` and presents you with a scala REPL ready for playing around:
+
+    import lensed.test.Persons._
+
+Now you can play around with some [predefined persons](examples/usage/src/main/scala/lensed/test/Persons.scala).
+
+
 
 Restrictions
 ------------
