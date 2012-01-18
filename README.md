@@ -24,7 +24,7 @@ Features
 Quickstart
 ----------
 
-    git clone https://gseitz@github.com/gseitz/Lensed.git
+    git clone https://github.com/gseitz/Lensed.git
     cd Lensed
     sbt "project usage" console
 
