@@ -40,7 +40,7 @@ with TreeDSL
       }
 
       val defaults = for (member <- caseClass.impl.body if isDefaultDef(member)) yield member
-      defaults.sortBy(_.symbol.name.toTermName.toString)
+      defaults reverse
     }
 
     private def findMemberPosition(defaults: List[Tree], member: Tree) = {
