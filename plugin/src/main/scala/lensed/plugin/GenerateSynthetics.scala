@@ -40,7 +40,10 @@ with TreeDSL
       }
 
       val defaults = for (member <- caseClass.impl.body if isDefaultDef(member)) yield member
-      defaults.sortBy(_.symbol.name.toTermName.toString)
+      defaults.sortBy { m => 
+        val tn = m.symbol.name.toTermName.toString
+        tn.substring(tn.lastIndexOf('$') + 1).toInt
+      }      
     }
 
     private def findMemberPosition(defaults: List[Tree], member: Tree) = {
@@ -198,7 +201,7 @@ with TreeDSL
 
       val typedCaseClass = typedTypeRef(caseClass, caseClassParamTypeSymbols.map(_.tpe))
 
-      val constrParamSym = caseClassW.newValue(caseClassW.pos.focus, newTermName("l"))
+      val constrParamSym = caseClassW.newValue(caseClassW.pos.focus, newTermName("___l"))
       constrParamSym setInfo lensType(lensParamType.tpe, typedCaseClass)
       constrParamSym setFlag (PARAMACCESSOR | PRIVATE)
       caseClassW.info.decls enter constrParamSym
@@ -224,7 +227,7 @@ with TreeDSL
               Apply(
                 TypeApply(
                   Select(
-                    Select(This(caseClassWName), newTermName("l")),
+                    Select(This(caseClassWName), newTermName("___l")),
                     newTermName("andThen")
                   ),
                   TypeTree(memberResultType) :: Nil
